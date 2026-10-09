@@ -15,6 +15,22 @@ uses existing voice UUIDs; its runtime settings expose voice selection and speed
 Maintained by Giggy, the speech API provider. Community-maintained integrations
 are maintained by their authors; this package is not maintained by the Pipecat team.
 
+## Try Giggy in your existing Pipecat pipeline
+
+[Start with the Giggy setup guide](https://giggy.ai/docs/speech-api?utm_source=pipecat&utm_medium=referral&utm_campaign=pipecat_integration&utm_content=github_readme#api-pipecat).
+Create an account and API key, choose a voice UUID, add paid Streaming credits,
+then install the adapter and replace your pipeline's TTS service using the example
+below. Keep your existing STT, LLM, and transport; you do not need another provider
+account just to run the foundational WAV example.
+
+[Watch the Angela Fowler demo](https://github.com/giggy-ai/pipecat-giggy/releases/download/v0.1.0/giggy-angela-starts-with-speech.mp4):
+real speech synthesis, a simulated user interruption, and resumed speech. The
+displayed text is synthesis text, not microphone transcription.
+
+Need help getting your first audio? [Open a setup question](https://github.com/giggy-ai/pipecat-giggy/issues)
+with your Pipecat version, transport, and sanitized error details. Never include
+your API key. We'd love to hear what you're building and help with integration.
+
 ## Installation
 
 Install the Giggy-maintained integration:
