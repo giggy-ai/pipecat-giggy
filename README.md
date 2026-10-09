@@ -84,6 +84,44 @@ python examples/basic.py --text "A voice that knows when to listen." --output sp
 On PowerShell, set variables with `$env:GIGGY_API_KEY = "your-api-key"` and the
 same pattern for the voice and billable-example flag. No key is printed.
 
+## Talk to a browser voice agent
+
+[examples/voice_agent.py](examples/voice_agent.py) is a complete microphone-driven
+agent using OpenAI transcription and responses, Giggy speech, and Pipecat's
+SmallWebRTC browser transport. It starts an application server, not an inference
+worker. Speak while the assistant is talking to trigger real VAD-driven barge-in;
+the transport clears queued audio and the TTS adapter closes its active response.
+Use headphones to avoid speaker audio being detected as user speech.
+
+From a checkout of this repository, install the tested dependencies:
+
+```sh
+python -m pip install "pipecat-ai[openai,silero,webrtc,runner]==1.12.0" pipecat-giggy
+export GIGGY_API_KEY="your-api-key"
+export GIGGY_VOICE_ID="your-voice-uuid"
+export OPENAI_API_KEY="your-openai-key"
+export GIGGY_ALLOW_BILLABLE_EXAMPLE=1
+python examples/voice_agent.py -t webrtc --host 127.0.0.1
+```
+
+On PowerShell, use `$env:NAME = "value"` instead of `export NAME="value"`.
+Open the local URL printed by Pipecat, connect, and allow microphone access.
+Ask a question, interrupt the spoken answer with another question, then confirm
+that the answer changes and the previous audio does not resume. Transcripts come
+from the STT provider; the Giggy adapter itself supplies synthesis text, not ASR.
+
+This example uses paid OpenAI STT/LLM calls and Giggy Streaming credits. Batch's
+zero-credit pricing does not apply. See [current Giggy pricing](https://giggy.ai/pricing)
+and [the speech API guide](https://giggy.ai/docs/speech-api#api-pipecat).
+The example has no automatic synthesis retry or alternate provider. HTTP cancellation
+does not guarantee immediate preemption of work already running on a GPU.
+
+The published [Angela Fowler demo](https://github.com/giggy-ai/pipecat-giggy/releases/download/v0.1.0/giggy-angela-starts-with-speech.mp4)
+shows real synthesis with a simulated interruption; it is not a recording of this
+microphone agent. No public latency figure or live microphone qualification is
+claimed by this example. Enable Pipecat metrics to measure your own deployment;
+TTS service time-to-first-byte and end-to-end microphone-to-speaker latency differ.
+
 ## Configuration
 
 | Parameter | Required/default | Meaning |
