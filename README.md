@@ -148,3 +148,7 @@ have incurred credits. No alternative synthesis backend is used.
 Compatibility updates are recorded in [CHANGELOG.md](CHANGELOG.md). Report issues
 to the Giggy repository after publication. Source and dependencies are released
 under their respective licenses; this integration uses the [ISC license](LICENSE).
+
+## Cloud voice sandbox (development candidate)
+
+The [Pipecat voice sandbox](examples/voice-agent-sandbox/README.md) includes the cloud-only Giggy UI, automatic introduction, Angela Fowler default voice, and a native Giggy STT / DeepSeek / Giggy TTS pipeline. Run from this checkout with `pip install -e ".[sandbox]"`. Each visitor supplies their own keys. This branch is `0.2.0.dev0`; published `0.1.0` remains TTS-only.

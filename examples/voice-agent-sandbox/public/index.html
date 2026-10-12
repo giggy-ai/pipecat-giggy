@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Giggy Voice Agent</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body>
+<header><a href="https://giggy.ai" class="brand" aria-label="Giggy home"><img src="/giggy-logo.svg" alt="Giggy" width="139" height="46"></a><div id="demo-heading" class="nav-heading" hidden><h1 class="sandbox-title"><strong>GIGGY VOICE AGENT</strong> SANDBOX</h1></div></header>
+<main>
+  <section id="setup" class="setup">
+    <div class="eyebrow">YOUR ACCOUNT. YOUR VOICE.</div><h1>Meet your voice agent.</h1>
+    <p>Create a Giggy account, then connect your own Giggy and DeepSeek API keys to start talking.</p>
+    <div class="setup-links"><a href="https://giggy.ai/?login=1" target="_blank" rel="noopener noreferrer">Sign up for Giggy ↗</a><a href="https://giggy.ai/app/speech-api" target="_blank" rel="noopener noreferrer">Get your Giggy API key ↗</a><a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer">Get your DeepSeek API key ↗</a></div>
+    <form id="connect-form"><label>Giggy API key<input id="giggy-key" type="password" autocomplete="off" required maxlength="512" placeholder="Your Giggy key"></label><label>DeepSeek API key<input id="deepseek-key" type="password" autocomplete="off" required maxlength="512" placeholder="Your DeepSeek key"></label><button id="connect" class="primary">Connect my account</button></form>
+    <p class="privacy">Keys are sent to this app’s server and held in memory for up to 30 minutes. They are used only with Giggy and DeepSeek. Only use a deployment you trust. Usage is billed to your accounts.</p>
+    <p id="setup-status" role="status"></p>
+  </section>
+  <section id="demo" class="demo" hidden>
+    <div class="avatar-column">
+      <div class="avatar-stage"><canvas id="visualizer" width="600" height="600" aria-hidden="true"></canvas><div class="avatar-frame"><img src="/giggy-avatar.webp" alt="Giggy voice assistant"></div></div>
+      <label class="voice-label">Choose a voice <select id="voice"></select></label>
+      <label class="voice-label">Response timing <select id="timing"><option value="450">Fast pauses</option><option value="700">Longer pauses</option></select></label>
+      <div class="actions"><button id="start" class="primary">▶ Start conversation</button><button id="stop" hidden>■ Stop</button><p id="session-status" role="status">Ready when you are.</p></div>
+    </div>
+    <div class="chat-panel"><div class="chat-heading"><div><h2>Chat log</h2><p>Giggy speech · DeepSeek</p></div><span id="timer"></span></div><div id="chat" role="log" aria-live="polite"></div><form id="message-form"><label class="sr-only" for="message">Type a message</label><input id="message" maxlength="1200" placeholder="Or type a message…" autocomplete="off" disabled><button id="send" aria-label="Send message" disabled>↑</button></form></div>
+  </section>
+</main><footer><span>Powered by <a href="https://giggy.ai">Giggy</a> · Your keys stay out of browser storage.</span><button id="disconnect" class="text-button" hidden>Disconnect & clear my keys</button></footer>
+</body></html>
