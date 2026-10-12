@@ -1,4 +1,4 @@
-# Giggy Voice Agent Sandbox — Pipecat
+# Giggy Voice Agent Sandbox â€” Pipecat
 
 The cloud-only Giggy voice sandbox, running on native Pipecat 1.12.0 services, frames, context aggregation, interruptions, and FastAPI WebSocket transport. Giggy performs streaming STT and TTS; Pipecat's DeepSeek service generates replies. No local model or local/cloud toggle is included.
 
@@ -27,7 +27,7 @@ Only successful durable STT completion produces a final Pipecat transcription. N
 
 Keys are validated against production APIs and held only in bounded server memory for 30 minutes. The browser receives an opaque HttpOnly SameSite cookie. Disconnect deletes the account session and clears keys. Production hosting requires HTTPS. Use a trusted single-instance host: this example has in-memory sessions and is not a shared multi-worker session store.
 
-The sandbox uses the existing Giggy production service. It does not change Giggy workers, database schemas, credits, or deployment. This branch is a development candidate (`0.2.0.dev0`); the published `0.1.0` package remains TTS-only. No PyPI or upstream Pipecat release is made by this change. Physical microphone and deployed browser qualification remain release checks.
+The sandbox uses the existing Giggy production service. It does not change Giggy workers, database schemas, credits, or deployment. The underlying published adapter is now `0.2.0`, including STT/TTS; install sandbox extras from this source checkout. No PyPI or upstream Pipecat release is made by this change. Physical microphone and deployed browser qualification remain release checks.
 
 ## Check
 
