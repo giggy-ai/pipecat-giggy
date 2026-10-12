@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import aiohttp
 from pipecat.frames.frames import (
@@ -323,7 +323,6 @@ class GiggySTTService(STTService):
                 json={
                     "mode": "streaming",
                     "microphone": True,
-                    "client_request_id": str(uuid4()),
                 },
                 timeout=aiohttp.ClientTimeout(total=120, sock_connect=10, sock_read=90),
                 allow_redirects=False,

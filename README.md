@@ -111,7 +111,7 @@ same pattern for the voice and billable-example flag. No key is printed.
 | `voice_id` | Required | Public or owned Giggy voice UUID |
 | `aiohttp_session` | Required | Caller-owned `aiohttp.ClientSession` |
 | `sample_rate` | `24000` | Current Streaming contract supports 24 kHz only |
-| `speed` | `1.0` | Speech speed, 0.25â€“4 inclusive |
+| `speed` | `1.0` | Speech speed, 0.25Ã¢â‚¬â€œ4 inclusive |
 | Additional keyword arguments | Pipecat defaults | Options passed to `TTSService` |
 
 Runtime settings use Pipecat's `TTSUpdateSettingsFrame`:
@@ -199,7 +199,7 @@ V17 admission/input handlers with offline worker and storage stand-ins; real
 microphone hardware and echo cancellation remain application-owned concerns.
 
 Each captured utterance, including pre-roll and VAD stop silence, must contain
-0.5–30 seconds of audio. Shorter segments report an error before admission;
+0.5â€“30 seconds of audio. Shorter segments report an error before admission;
 longer ones fail and close the active request. No synthetic silence is added.
 There is no automatic splitting at 30 seconds. Automatic language detection is
 required; model/language changes and synthetic keepalive are unsupported.
@@ -240,7 +240,7 @@ python examples/transcribe.py --input your-recording.wav
 ```
 
 For PowerShell use `$env:GIGGY_API_KEY = "your-api-key"` and
-`$env:GIGGY_ALLOW_BILLABLE_EXAMPLE = "1"`. The recording must be 0.5–30 seconds.
+`$env:GIGGY_ALLOW_BILLABLE_EXAMPLE = "1"`. The recording must be 0.5â€“30 seconds.
 Output labels provisional replacement snapshots and the canonical final text.
 
 ## Maintenance
@@ -248,3 +248,7 @@ Output labels provisional replacement snapshots and the canonical final text.
 Compatibility updates are recorded in [CHANGELOG.md](CHANGELOG.md). Report issues
 to the Giggy repository after publication. Source and dependencies are released
 under their respective licenses; this integration uses the [ISC license](LICENSE).
+
+## Cloud voice sandbox (development candidate)
+
+The [Pipecat voice sandbox](examples/voice-agent-sandbox/README.md) includes the cloud-only Giggy UI, automatic introduction, Angela Fowler default voice, and a native Giggy STT / DeepSeek / Giggy TTS pipeline. Run from this checkout with `pip install -e ".[sandbox]"`. Each visitor supplies their own keys. The underlying published adapter is `0.2.0`, including STT/TTS. Sandbox dependencies are installed from this checkout; the browser example remains a review branch.
