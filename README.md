@@ -3,17 +3,7 @@
 Version `0.2.0` adds live speech-to-text alongside the existing text-to-speech
 integration. Both use Giggy's paid Streaming API and Pipecat 1.12.0.
 
-Giggy makes expressive Voice AI accessible to more developers, with natural
-speech, expressive control, and voice cloning. Our focus is making high-quality
-speech affordable enough for developers to build and scale voice experiences.
-
-This integration brings Giggy's paid streaming speech API into Pipecat pipelines,
-with voice selection, speech-speed updates, and interruption handling. Developers
-can give their assistants a distinctive voice while keeping their existing
-transcription, language model, and transport providers.
-
-Voice cloning and expressive control are Giggy product capabilities. This adapter
-uses existing voice UUIDs; its runtime settings expose voice selection and speed.
+This Giggy-maintained package provides streaming STT and TTS processors for Pipecat pipelines. TTS uses existing voice UUIDs and runtime voice/speed settings; STT consumes VAD-delimited 16 kHz mono PCM and returns interim snapshots plus a final transcript after durable completion. These adapters do not implement voice cloning or local model inference.
 
 Maintained by Giggy, the speech API provider. Community-maintained integrations
 are maintained by their authors; this package is not maintained by the Pipecat team.
@@ -111,7 +101,7 @@ same pattern for the voice and billable-example flag. No key is printed.
 | `voice_id` | Required | Public or owned Giggy voice UUID |
 | `aiohttp_session` | Required | Caller-owned `aiohttp.ClientSession` |
 | `sample_rate` | `24000` | Current Streaming contract supports 24 kHz only |
-| `speed` | `1.0` | Speech speed, 0.25â€“4 inclusive |
+| `speed` | `1.0` | Speech speed, 0.25Ã¢â‚¬â€œ4 inclusive |
 | Additional keyword arguments | Pipecat defaults | Options passed to `TTSService` |
 
 Runtime settings use Pipecat's `TTSUpdateSettingsFrame`:
@@ -199,7 +189,7 @@ V17 admission/input handlers with offline worker and storage stand-ins; real
 microphone hardware and echo cancellation remain application-owned concerns.
 
 Each captured utterance, including pre-roll and VAD stop silence, must contain
-0.5–30 seconds of audio. Shorter segments report an error before admission;
+0.5â€“30 seconds of audio. Shorter segments report an error before admission;
 longer ones fail and close the active request. No synthetic silence is added.
 There is no automatic splitting at 30 seconds. Automatic language detection is
 required; model/language changes and synthetic keepalive are unsupported.
@@ -240,7 +230,7 @@ python examples/transcribe.py --input your-recording.wav
 ```
 
 For PowerShell use `$env:GIGGY_API_KEY = "your-api-key"` and
-`$env:GIGGY_ALLOW_BILLABLE_EXAMPLE = "1"`. The recording must be 0.5–30 seconds.
+`$env:GIGGY_ALLOW_BILLABLE_EXAMPLE = "1"`. The recording must be 0.5â€“30 seconds.
 Output labels provisional replacement snapshots and the canonical final text.
 
 ## Maintenance
@@ -248,3 +238,9 @@ Output labels provisional replacement snapshots and the canonical final text.
 Compatibility updates are recorded in [CHANGELOG.md](CHANGELOG.md). Report issues
 to the Giggy repository after publication. Source and dependencies are released
 under their respective licenses; this integration uses the [ISC license](LICENSE).
+
+## Existing browser demos
+
+For an application you can run today, use the [standalone cloud sandbox](https://github.com/giggy-ai/giggy-voice-agent), with its own Giggy/DeepSeek keys and server bridge. For native Pipecat, review [cloud sandbox PR #2](https://github.com/giggy-ai/pipecat-giggy/pull/2) and [SmallWebRTC PR #1](https://github.com/giggy-ai/pipecat-giggy/pull/1). They remain separate unmerged proposals with qualification notes; no additional demo is needed. The existing recorded-input STT/TTS video is not physical microphone qualification.
+
+[Create a Giggy account](https://giggy.ai/?login=1&utm_source=github&utm_medium=referral&utm_campaign=developer_onboarding&utm_content=pipecat_giggy_readme) and [read the speech API guide](https://giggy.ai/docs/speech-api?utm_source=github&utm_medium=referral&utm_campaign=developer_onboarding&utm_content=pipecat_giggy_docs). Keep keys server-side. Installation from PyPI currently supplies version 0.2.0; selecting a voice, sufficient account credits and the pinned Pipecat version remain prerequisites for a real API run.
