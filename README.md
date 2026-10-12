@@ -1,8 +1,7 @@
 # Giggy speech for Pipecat
 
-**Local preparation:** STT is an unpublished `0.2.0.dev0` candidate. PyPI `0.1.0`
-contains TTS only. Live microphone/conversation qualification and an STT demo
-remain release gates; no STT support has been submitted to Pipecat yet.
+Version `0.2.0` adds live speech-to-text alongside the existing text-to-speech
+integration. Both use Giggy's paid Streaming API and Pipecat 1.12.0.
 
 Giggy makes expressive Voice AI accessible to more developers, with natural
 speech, expressive control, and voice cloning. Our focus is making high-quality
@@ -147,7 +146,7 @@ context immediately. HTTP/format/timeout failures produce safe `ErrorFrame`s.
 Failed requests are never automatically retried because admission may already
 have incurred credits. No alternative synthesis backend is used.
 
-## Speech-to-text candidate
+## Speech-to-text
 
 `GiggySTTService` connects to Giggy's existing paid live PCM transcription API.
 It sends audio while the user speaks, emits cumulative provisional text through
@@ -156,8 +155,18 @@ after verifying the completed operation and fetching its canonical transcript.
 Display each interim snapshot by replacement; do not append revisions or treat
 them as committed user text. No STT voice UUID is required.
 
-For local evaluation, install this checkout with `python -m pip install -e .`.
-The released `uv add pipecat-giggy` package does not yet include STT.
+Install `pipecat-giggy>=0.2.0` for STT; version 0.1.0 contains TTS only.
+
+```sh
+python -m pip install "pipecat-giggy>=0.2.0"
+```
+
+[Watch the two-voice STT conversation demo](https://github.com/giggy-ai/pipecat-giggy/releases/download/v0.2.0/giggy-pipecat-stt-live-chat.mp4).
+It uses TTS-generated Aiden utterances through browser PCM capture and real Giggy
+STT, with Angela Fowler responses and VAD-driven interruption. User transcripts
+are actual provisional/final results; assistant text follows playback with
+approximate timing. Replies are scripted. Physical microphone hardware and echo
+cancellation are not qualified by this recording.
 
 ```python
 from pipecat_giggy import GiggySTTService
@@ -187,7 +196,7 @@ attempt/token fence the ordered `input_token`, `sequence`, `pcm_base64`, and
 `complete` frame POSTs. No V17-specific parameter, language override, multipart
 upload or internal worker route is required. The contract check uses the actual
 V17 admission/input handlers with offline worker and storage stand-ins; real
-microphone qualification remains a separate release gate.
+microphone hardware and echo cancellation remain application-owned concerns.
 
 Each captured utterance, including pre-roll and VAD stop silence, must contain
 0.5–30 seconds of audio. Shorter segments report an error before admission;
@@ -215,7 +224,7 @@ capability. Requests stay on the admitting origin. HTTPS redirects are disabled;
 signed transcript artifacts are fetched without sending the Giggy key/token.
 The turn lifetime is bounded to 150 seconds; admission/SSE is bounded to 120
 seconds and each input POST to 10 seconds. No measured STT latency guarantee is
-claimed for this candidate; Pipecat's default STT metadata is not a Giggy benchmark.
+claimed for this integration; Pipecat's default STT metadata is not a Giggy benchmark.
 
 ### Replay a recording through the live input protocol
 
