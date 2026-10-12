@@ -173,7 +173,8 @@ stt = GiggySTTService(
 
 Supply Pipecat's `VADUserStartedSpeakingFrame` and
 `VADUserStoppedSpeakingFrame` upstream of STT. Use a VAD onset delay no greater
-than 200 ms, covered by the adapter's real-audio pre-roll. Input must already be
+than one second, covered by the adapter's real-audio pre-roll. Account for the
+VAD model's detection delay as well as its configured start window. Input must already be
 mono PCM16 LE at 16 kHz; compressed audio and other rates are rejected. The
 adapter does not provide resampling, VAD, speaker diarization or word timestamps.
 

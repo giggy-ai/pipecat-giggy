@@ -134,9 +134,10 @@ class GiggySTTService(STTService):
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:
         """Buffer bounded capture data; network work runs independently of audio frames."""
         if self._capture is None:
-            # Real input audio only: retain 200 ms to cover VAD onset latency.
-            self._pre_roll.extend(audio[-6400:])
-            del self._pre_roll[:-6400]
+            # Retain one second of real input: model detection can lag its
+            # configured start window, especially for quiet opening words.
+            self._pre_roll.extend(audio[-32000:])
+            del self._pre_roll[:-32000]
         else:
             turn = self._capture
             if turn.captured + len(audio) > _MAX_AUDIO_BYTES:

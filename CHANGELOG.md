@@ -11,6 +11,7 @@
 - Add a billable WAV replay example through the live protocol, with no LLM or TTS dependencies.
 - Keep Pipecat pinned to 1.12.0. Live microphone and combined STT/TTS qualification remain pending.
 - Verify the unchanged live wire format against current V17 admission/input handlers, including optional request IDs and strict frame errors.
+- Preserve one second of real pre-VAD audio so delayed detection does not cut quiet opening words; verified against production recorded speech.
 
 Not published to PyPI or submitted to Pipecat.
 
