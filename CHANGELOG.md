@@ -7,6 +7,7 @@
 - Preserve short real captures, bounded next-turn reservations and ordered final delivery. No padding, transport fallback or automatic paid-request replay.
 - Expose caller-owned boundaries and clean-source EOF through `GiggyExternalSTTService`; correct the finite-recording example to use that helper.
 - Reject caller-session default credentials and recheck before signed artifact reads; reject boolean/non-numeric TTS speeds.
+- Log failed saved-transcript downloads with HTTP status, generation/attempt, recognized storage error code and validated request/Cloudflare IDs. Bound error-body reads to 4 KiB and omit raw bodies, signed URLs and credentials; keep the existing no-retry failure behavior.
 - Require the Silero extra, provide optional test dependencies, and correct language, transport, lifecycle and unreleased-version documentation.
 - Remain pinned to Pipecat 1.12.0. This candidate is local and not published; the running production benchmark retains its separate frozen adapter snapshot.
 

@@ -133,9 +133,11 @@ async def wait_for_condition(predicate, timeout=2):
 
 class FiniteHTTPFixture:
     """Existing local admit/audio/status/artifact fixture, with test-only capture."""
-    def __init__(self, pcm, *, disconnect=False, wrong_fence=None, verification_gate=None, final_gate=None, artifact_text=None, artifact_duration=None, transport="websocket-v1"):
+    def __init__(self, pcm, *, disconnect=False, wrong_fence=None, verification_gate=None, final_gate=None, artifact_text=None, artifact_duration=None, transport="websocket-v1", artifact_status=200, artifact_error_body=b"", artifact_headers=None):
         self.pcm, self.disconnect, self.wrong_fence = pcm, disconnect, wrong_fence
         self.artifact_requests = 0
+        self.artifact_status, self.artifact_error_body = artifact_status, artifact_error_body
+        self.artifact_headers = artifact_headers or {}
         self.transport = transport
         self.verification_gate, self.final_gate = verification_gate, final_gate
         self.artifact_text, self.artifact_duration = artifact_text, artifact_duration
@@ -241,6 +243,14 @@ class FiniteHTTPFixture:
         self.artifact_requests += 1
         assert 'Authorization' not in req.headers
         assert 'xi-api-key' not in req.headers
+        if self.artifact_status == 408:
+            response = web.StreamResponse(status=408, headers={**self.artifact_headers, 'Content-Length': '1024'})
+            await response.prepare(req)
+            await response.write(self.artifact_error_body)
+            req.transport.close()
+            return response
+        if self.artifact_status != 200:
+            return web.Response(status=self.artifact_status, body=self.artifact_error_body, headers=self.artifact_headers)
         return web.json_response({'text': self.text if self.artifact_text is None else self.artifact_text, 'audio_duration_ms': (len(self.pcm) + 31) // 32 if self.artifact_duration is None else self.artifact_duration})
 
     async def __aenter__(self):
@@ -478,6 +488,42 @@ class BenchmarkFastFinalTests(unittest.IsolatedAsyncioTestCase):
                     gate.set()
 
     async def test_late_artifact_mismatch_is_reported_without_second_final(self):
+        # Storage failures retain actionable metadata, never bodies or signed URLs.
+        for status, body, code in [
+            (403, b'<Error><Code>SignatureDoesNotMatch</Code><Message>unit-private-secret https://artifact.invalid/?X-Amz-Signature=private</Message></Error>', 'SignatureDoesNotMatch'),
+            (404, b'{"code":"NoSuchKey","message":"unit-private-secret"}', 'NoSuchKey'),
+            (503, b'<html>unit-private-secret</html>', 'unknown'),
+            (502, b'<Error><Code>unitPrivateSecret</Code></Error>', 'unknown'),
+            (302, b'unit-private-secret', 'unknown'),
+            (500, b'x' * 8192 + b'<Code>InternalError</Code>', 'unknown'),
+            (400, b'{"code":["unit-private-secret"]}', 'unknown'),
+            (408, b'<Code>InternalError</Code>', 'InternalError'),
+        ]:
+            with self.subTest(artifact_status=status):
+                pcm = b'\x10\x20' * 16000
+                headers = {'x-amz-request-id': '0123456789abcdef', 'CF-Ray': '0123456789abcdef-LAX',
+                           'Location': 'https://artifact.invalid/?X-Amz-Signature=private'}
+                if status == 400:
+                    headers.update({'x-amz-request-id': 'unit-private-secret', 'CF-Ray': 'unit-private-secret'})
+                async with FiniteHTTPFixture(pcm, artifact_status=status, artifact_error_body=body, artifact_headers=headers) as http:
+                    with patch.object(m.logger, 'error') as logged:
+                        async with benchmark_capture(http.session, http.origin) as (svc, finals, errors):
+                            await end_benchmark_capture(svc, pcm)
+                            await wait_for_condition(lambda: svc._failed)
+                            calls = [c for c in logged.call_args_list if 'artifact download failed' in c.args[0]]
+                            assert len(calls) == 1, 'Missing artifact failure diagnostic'
+                            args = calls[0].args
+                            assert args[1:8] == ('canonical_artifact', http.gid, 1, status, code,
+                                                None if status == 400 else '0123456789abcdef',
+                                                None if status == 400 else '0123456789abcdef-LAX')
+                            assert args[8] == ('ClientPayloadError' if status == 408 else None)
+                            assert 'unit-private-secret' not in str(logged.call_args_list)
+                            assert 'unitPrivateSecret' not in str(logged.call_args_list)
+                            assert 'X-Amz-Signature' not in str(logged.call_args_list)
+                            assert 'artifact.invalid' not in str(logged.call_args_list)
+                            assert errors and len(finals()) == 1
+                            assert http.artifact_requests == len(http.admissions) == 1
+
         for overrides in [{'artifact_text': 'different saved transcript'}, {'artifact_duration': 1}]:
             with self.subTest(overrides=overrides):
                 pcm, gate = b'\x10\x20' * 16000, asyncio.Event()

@@ -691,7 +691,44 @@ class GiggySTTService(STTService):
                         allow_redirects=False,
                     ) as artifact:
                         if artifact.status != 200:
-                            raise ValueError("Artifact unavailable")
+                            # Bound diagnostic reads and allowlist metadata: storage
+                            # messages, signed URLs and arbitrary headers can leak keys.
+                            error_body = bytearray()
+                            body_read_error = None
+                            try:
+                                while len(error_body) < 4096:
+                                    chunk = await artifact.content.read(4096 - len(error_body))
+                                    if not chunk:
+                                        break
+                                    error_body.extend(chunk)
+                            except (TimeoutError, aiohttp.ClientError) as error:
+                                body_read_error = type(error).__name__
+                            try:
+                                error_document = json.loads(error_body)
+                                storage_code = error_document.get("Code", error_document.get("code")) if isinstance(error_document, dict) else None
+                            except (ValueError, UnicodeError):
+                                match = re.search(r"<Code>\s*([A-Za-z][A-Za-z0-9]{0,63})\s*</Code>", error_body.decode("utf-8", errors="replace"))
+                                storage_code = match[1] if match else None
+                            if not isinstance(storage_code, str) or storage_code not in {
+                                "AccessDenied", "SignatureDoesNotMatch", "ExpiredToken",
+                                "RequestTimeTooSkewed", "NoSuchKey", "NoSuchBucket",
+                                "InternalError", "SlowDown", "ServiceUnavailable",
+                                "InvalidArgument", "AuthorizationQueryParametersError",
+                                "RequestExpired", "InvalidAccessKeyId", "MalformedXML",
+                            }:
+                                storage_code = "unknown"
+                            request_id = artifact.headers.get("x-amz-request-id", "")
+                            if not re.fullmatch(r"(?:[A-Fa-f0-9]{16,128}|[A-Fa-f0-9]{8}(?:-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12})", request_id):
+                                request_id = None
+                            cf_ray = artifact.headers.get("cf-ray", "")
+                            if not re.fullmatch(r"[A-Fa-f0-9]{16,32}(?:-[A-Z]{3})?", cf_ray):
+                                cf_ray = None
+                            logger.error(
+                                "Giggy STT artifact download failed phase={} generation={} attempt={} status={} storage_code={} request_id={} cf_ray={} body_read_error={}",
+                                phase, generation_id, attempt, artifact.status,
+                                storage_code, request_id, cf_ray, body_read_error,
+                            )
+                            raise ValueError(f"Artifact unavailable (HTTP {artifact.status})")
                         body = bytearray()
                         async for chunk in artifact.content.iter_chunked(4096):
                             body.extend(chunk)
