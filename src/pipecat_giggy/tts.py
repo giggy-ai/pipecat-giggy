@@ -20,7 +20,7 @@ GIGGY_SPEECH_URL = 'https://giggy.ai/v1/audio/speech'
 
 @dataclass
 class GiggyTTSSettings(TTSSettings):
-    """Runtime voice/model settings and Giggy speech speed (0.25â€“4)."""
+    """Runtime voice/model settings and Giggy speech speed (0.25–4)."""
     speed: float | None | NotGiven = field(
         default_factory=lambda: NOT_GIVEN
     )
@@ -51,6 +51,11 @@ class GiggyHttpTTSService(TTSService):
             speed: Speech speed from 0.25 to 4 inclusive.
             **kwargs: Additional Pipecat TTSService options.
         """
+        if getattr(aiohttp_session, "auth", None) is not None or any(
+            name.lower() in {"authorization", "proxy-authorization", "xi-api-key", "x-giggy-input-token", "cookie"}
+            for name in getattr(aiohttp_session, "headers", {})
+        ):
+            raise ValueError("Use a credential-free aiohttp session; pass the Giggy key through api_key.")
         if not api_key:
             raise ValueError(
                 'api_key is required.'
@@ -66,7 +71,7 @@ class GiggyHttpTTSService(TTSService):
                 'sample_rate must be 24000 for Giggy Streaming.'
             )
 
-        if not 0.25 <= speed <= 4:
+        if isinstance(speed, bool) or not isinstance(speed, (int, float)) or not 0.25 <= speed <= 4:
             raise ValueError(
                 'speed must be between 0.25 and 4.'
             )
@@ -128,7 +133,7 @@ class GiggyHttpTTSService(TTSService):
             yield ErrorFrame(error="Giggy synthesis text must not be empty.")
             return
 
-        if not isinstance(speed, (int, float)) or not 0.25 <= speed <= 4:
+        if isinstance(speed, bool) or not isinstance(speed, (int, float)) or not 0.25 <= speed <= 4:
             yield ErrorFrame(error="Giggy speed must be between 0.25 and 4.")
             return
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0.dev0 — Unreleased
+
+- Use the tested V21 low-latency Pipecat bridge for the public `GiggySTTService`: readiness before capture, 20 ms first / 100 ms ongoing PCM, independent 100 ms Silero endpoints and softer continuation detection.
+- Keep native upstream VAD/metrics unchanged; validate the final input ACK before publishing a fenced final and drain durable transcript verification afterward.
+- Preserve short real captures, bounded next-turn reservations and ordered final delivery. No padding, transport fallback or automatic paid-request replay.
+- Expose caller-owned boundaries and clean-source EOF through `GiggyExternalSTTService`; correct the finite-recording example to use that helper.
+- Reject caller-session default credentials and recheck before signed artifact reads; reject boolean/non-numeric TTS speeds.
+- Require the Silero extra, provide optional test dependencies, and correct language, transport, lifecycle and unreleased-version documentation.
+- Remain pinned to Pipecat 1.12.0. This candidate is local and not published; the running production benchmark retains its separate frozen adapter snapshot.
+
 ## 0.2.0 — 2026-10-12
 
 - Add `GiggySTTService` using the existing paid live PCM transcription API.

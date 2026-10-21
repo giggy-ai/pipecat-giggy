@@ -22,7 +22,7 @@ from pipecat.pipeline.worker import PipelineParams, PipelineWorker
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.workers.runner import WorkerRunner
 
-from pipecat_giggy import GiggySTTService
+from pipecat_giggy import GiggyExternalSTTService
 
 
 class TranscriptOutput(FrameProcessor):
@@ -69,7 +69,7 @@ async def main():
     output = TranscriptOutput()
     errors = []
     async with aiohttp.ClientSession() as session:
-        stt = GiggySTTService(
+        stt = GiggyExternalSTTService(
             api_key=os.environ["GIGGY_API_KEY"], aiohttp_session=session
         )
         worker = PipelineWorker(
