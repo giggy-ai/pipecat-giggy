@@ -15,7 +15,7 @@ from pipecat.services.tts_service import TTSService
 from pipecat.utils.tracing.service_decorators import traced_tts
 from pipecat.utils.types import NOT_GIVEN, NotGiven
 
-GIGGY_SPEECH_URL = 'https://giggy.ai/v1/audio/speech'
+GIGGY_SPEECH_URL = 'https://api.giggy.ai/v1/audio/speech'
 
 
 @dataclass

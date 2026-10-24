@@ -1,15 +1,13 @@
-"""VAD-delimited live PCM transcription over Giggy's public HTTP/SSE API."""
+"""VAD-delimited live PCM transcription over Giggy's public one-socket WebSocket API."""
 
 import asyncio
-import base64
-import codecs
 import json
 import re
 from collections.abc import AsyncGenerator, AsyncIterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import aiohttp
 from loguru import logger
@@ -58,6 +56,7 @@ class _Utterance:
     decode_end_sample: int | None = None
     metric_boundary: asyncio.Event | None = None
     input_transport: str | None = None
+    sent_frames: int = 0
     tail_candidate_refreshed: bool = False
     quiet_start_sample: int | None = None
     input_acknowledged: asyncio.Event = field(default_factory=asyncio.Event)
@@ -68,7 +67,7 @@ class GiggySTTService(STTService):
 
     Requires mono PCM16 LE at 16 kHz and upstream VAD start/stop frames.
     Provisional snapshots are interim frames; the fenced complete snapshot becomes
-    a final frame while durable persistence is drained and verified separately. Admissions and ambiguous input POSTs are never retried.
+    a final frame while durable persistence is drained and verified separately. Admissions and ambiguous live audio are never retried.
     """
 
     Settings = STTSettings
@@ -78,7 +77,7 @@ class GiggySTTService(STTService):
         *,
         api_key: str,
         aiohttp_session: aiohttp.ClientSession,
-        base_url: str = "https://giggy.ai",
+        base_url: str = "https://api.giggy.ai",
         sample_rate: int = 16000,
         endpointing: str = "vad",
         settings: STTSettings | None = None,
@@ -417,36 +416,35 @@ class GiggySTTService(STTService):
             turn.audio.clear()
 
     async def _events(self, response):
-        decoder = codecs.getincrementaldecoder("utf-8")()
-        pending = ""
-        async for chunk in response.content.iter_chunked(4096):
-            pending += decoder.decode(chunk)
-            if len(pending.encode("utf-8")) > _MAX_RESULT_BYTES:
-                raise ValueError("Event limit exceeded")
-            while boundary := re.search(r"\r?\n\r?\n", pending):
-                block, pending = pending[: boundary.start()], pending[boundary.end() :]
-                event = "message"
-                parts = []
-                for line in block.splitlines():
-                    if line.startswith("event:"):
-                        event = line[6:].strip()
-                    elif line.startswith("data:"):
-                        parts.append(line[5:].lstrip(" "))
-                if parts:
-                    payload = json.loads("\n".join(parts))
-                    if not isinstance(payload, dict):
-                        raise ValueError("Expected an event object")
-                    yield event, payload
-        pending += decoder.decode(b"", final=True)
-        if pending.strip() and not pending.lstrip().startswith(":"):
-            raise ValueError("Incomplete event")
+        async for message in response:
+            if message.type != aiohttp.WSMsgType.TEXT:
+                raise ValueError("Expected a live STT control message")
+            payload = json.loads(message.data)
+            if not isinstance(payload, dict):
+                raise ValueError("Expected a live STT event object")
+            kind = payload.get("type")
+            if kind == "ready":
+                if payload.get("sampleRateHz") != 16000:
+                    raise ValueError("Invalid live STT sample rate")
+                yield "microphone_ready", {**payload, "input_transport": "websocket-v25"}
+            elif kind == "transcription":
+                alternatives = payload.get("alternatives")
+                text = alternatives[0].get("transcript") if isinstance(alternatives, list) and alternatives and isinstance(alternatives[0], dict) else None
+                yield "transcript_chunk", {**payload, "text": text, "complete": payload.get("is_final")}
+            elif kind in {"generation_created", "generation_updated", "input_complete", "error"}:
+                yield kind, payload
+                if kind == "generation_updated" and (payload.get("status") or (payload.get("generation") or {}).get("status")) == "completed":
+                    return
+            else:
+                raise ValueError("Unexpected live STT event")
+        if response.exception() is not None:
+            raise ValueError("Live STT socket failed")
 
-    async def _stream_audio_frames(self, turn, token):
-        sequence = sent_samples = 0
+    async def _stream_audio_frames(self, turn):
+        sequence = 0
         while True:
             turn.changed.clear()
-            # Start at 20ms, then amortize controller parsing and durable owner
-            # validation over 100ms packets. Never hold a final or a newly
+            # Start at 20ms, then send 100ms packets. Never hold a final or a newly
             # prepared endpoint candidate behind this batching threshold.
             threshold = 640 if sequence == 0 else _PACKET_BYTES
             candidate_flush = turn.decode_end_sample is not None and bool(turn.audio)
@@ -455,35 +453,40 @@ class GiggySTTService(STTService):
                 continue
             pcm = bytes(turn.audio[:_MAX_PACKET_BYTES])
             del turn.audio[:len(pcm)]
-            sent_samples += len(pcm) // 2
             complete = turn.ended and not turn.audio
-            frame = {"input_token": token, "sequence": sequence,
-                     "pcm_base64": base64.b64encode(pcm).decode("ascii"), "complete": complete}
-            if turn.decode_end_sample is not None and max(0, sent_samples - 3200) <= turn.decode_end_sample <= sent_samples:
-                frame["decode_end_sample"] = turn.decode_end_sample
-            yield (json.dumps(frame, separators=(",", ":")) + "\n").encode()
+            # Every captured sample is retained. A canonical preparation marker
+            # can change model context, never accepted input duration.
+            yield pcm, complete
             sequence += 1
             if complete:
                 return
 
-    async def _send_audio(self, turn, generation_id, token):
-        async with self._session.ws_connect(
-            f"{self._origin}/api/generations/{generation_id}/stt-input",
-            headers={"x-giggy-input-token": token}, protocols=("giggy-stt-v1",),
-            max_msg_size=1024, compress=0,
-        ) as socket:
-            if socket.protocol != "giggy-stt-v1":
-                raise ValueError("Invalid microphone socket protocol")
-            sequence = -1
-            async for wire in self._stream_audio_frames(turn, token):
-                await socket.send_str(wire.decode("utf8"))
-                sequence += 1
-            acknowledgement = await socket.receive_json(timeout=10)
-            if (not isinstance(acknowledgement, dict) or acknowledgement.get("ok") is not True
-                    or type(acknowledgement.get("sequence")) is not int
-                    or acknowledgement["sequence"] != sequence):
-                raise ValueError("Input socket final not acknowledged")
-            turn.input_acknowledged.set()
+    async def _send_audio(self, turn, generation_id, socket):
+        sent_samples = 0
+        prepared = None
+        async for pcm, complete in self._stream_audio_frames(turn):
+            if socket.closed:
+                raise ValueError("Live STT socket closed before input completion")
+            candidate = turn.decode_end_sample
+            # Withdraw before resumed PCM; a new boundary can only refer to
+            # samples already accepted on this ordered socket.
+            if candidate != prepared and (prepared is not None or candidate is not None and candidate <= sent_samples):
+                prepared = candidate if candidate is not None and candidate <= sent_samples else None
+                await socket.send_json({"type": "prepare", "decode_end_sample": prepared})
+            if pcm:
+                await socket.send_bytes(pcm)
+                turn.sent_frames += 1
+                sent_samples += len(pcm) // 2
+            if candidate != prepared and candidate is not None and candidate <= sent_samples:
+                if not max(0, sent_samples - 3200) <= candidate <= sent_samples:
+                    raise ValueError("Canonical preparation boundary expired")
+                await socket.send_json({"type": "prepare", "decode_end_sample": candidate})
+                prepared = candidate
+            if complete:
+                if candidate is not None and candidate > sent_samples:
+                    raise ValueError("Preparation references audio that was not sent")
+                await socket.send_json({"type": "stop"})
+        await asyncio.wait_for(turn.input_acknowledged.wait(), timeout=10)
 
     async def _await_input_acknowledgement(self, turn, sender):
         # WebSocket __aexit__ waits for the peer close handshake. It is cleanup,
@@ -492,7 +495,7 @@ class GiggySTTService(STTService):
         try:
             await asyncio.wait({acknowledged, sender}, return_when=asyncio.FIRST_COMPLETED)
             if sender.done() or not turn.input_acknowledged.is_set():
-                await sender  # Legacy transports and all sender errors still validate.
+                await sender  # Input acceptance and sender failures remain publication gates.
         finally:
             acknowledged.cancel()
             await asyncio.gather(acknowledged, return_exceptions=True)
@@ -510,33 +513,15 @@ class GiggySTTService(STTService):
         final_text = None
         try:
             async with asyncio.timeout_at(turn.ready_deadline) as readiness_timeout:
-                async with self._session.post(
+                async with self._session.ws_connect(
                     f"{self._origin}/v1/audio/transcriptions",
-                    headers=headers,
-                    json={
-                        "mode": "streaming",
-                        "microphone": True,
-                        "language": turn.language,
-                        **({"endpointing": "external"} if self._endpointing == "external" else {}),
-                        "client_request_id": str(uuid4()),
-                    },
-                    timeout=aiohttp.ClientTimeout(total=120, sock_connect=10, sock_read=90),
-                    allow_redirects=False,
+                    headers={"Authorization": "Bearer " + self._api_key},
+                    max_msg_size=_MAX_RESULT_BYTES, compress=0, receive_timeout=90,
                 ) as response:
+                    await response.send_json({"type": "start", "format": "raw", "encoding": "LINEAR16",
+                        "sampleRateHz": 16000, "interimResults": True, "options": {"endpointing": "external"},
+                        **({"language": turn.language} if turn.language else {})})
                     phase = "stream_or_input"
-                    if response.status != 200:
-                        await self._fail(
-                            f"Giggy STT admission returned HTTP {response.status}; it was not retried."
-                        )
-                        return
-                    if (
-                        response.headers.get("content-type", "")
-                        .split(";")[0]
-                        .strip()
-                        .lower()
-                        != "text/event-stream"
-                    ):
-                        raise ValueError("Expected SSE")
                     events = self._events(response)
                     while True:
                         read_task = asyncio.create_task(anext(events))
@@ -545,7 +530,7 @@ class GiggySTTService(STTService):
                                 [read_task, sender], return_when=asyncio.FIRST_COMPLETED
                             )
                             if sender in done:
-                                # A rejected/ambiguous POST closes SSE immediately.
+                                # An input failure cancels this socket immediately.
                                 await sender
                         elif sender is not None:
                             await sender
@@ -569,7 +554,6 @@ class GiggySTTService(STTService):
                                 raise ValueError("Invalid generation identity")
                             logger.debug(f"{self}: canonical STT generation {generation_id}")
                         elif event == "microphone_ready":
-                            token = payload.get("input_token")
                             attempt = payload.get("attempt")
                             if (
                                 not generation_id
@@ -577,15 +561,13 @@ class GiggySTTService(STTService):
                                 or sender is not None
                                 or type(attempt) is not int
                                 or attempt < 1
-                                or not isinstance(token, str)
-                                or not re.fullmatch(r"[a-f0-9]{64}", token)
                             ):
                                 raise ValueError("Invalid readiness")
-                            if payload.get("input_transport") != "websocket-v1":
-                                raise ValueError("V21 requires websocket-v1 input")
+                            if payload.get("input_transport") != "websocket-v25":
+                                raise ValueError("Live STT requires the one-socket protocol")
                             turn.input_transport = payload.get("input_transport")
                             sender = asyncio.create_task(
-                                self._send_audio(turn, generation_id, token)
+                                self._send_audio(turn, generation_id, response)
                             )
                             turn.generation_id = generation_id
                             readiness_timeout.reschedule(None)
@@ -593,6 +575,10 @@ class GiggySTTService(STTService):
                                 turn.idle_timer = asyncio.get_running_loop().call_later(
                                     _EXTERNAL_IDLE_SECONDS, turn.task.cancel)
                             turn.ready.set()
+                        elif event == "input_complete":
+                            if payload.get("generation_uuid") != generation_id or not turn.ended or turn.input_acknowledged.is_set() or type(payload.get("sequence")) is not int or payload["sequence"] != turn.sent_frames:
+                                raise ValueError("Invalid final input acknowledgement")
+                            turn.input_acknowledged.set()
                         elif event == "transcript_chunk":
                             sequence = payload.get("sequence")
                             if (
@@ -649,7 +635,7 @@ class GiggySTTService(STTService):
                         raise ValueError("No ready operation")
                     # Never let EOF strand a sender waiting for audio indefinitely.
                     if not sender.done() and not turn.ended:
-                        raise ValueError("SSE ended before input acknowledgement")
+                        raise ValueError("Live socket ended before input acknowledgement")
                     await sender
                     phase = "canonical_status"
                     async with self._session.get(
@@ -876,7 +862,7 @@ class GiggyV21PipecatSTTService(GiggySTTService):
         # Use an actual speech model, not zero samples/RMS, to prepare a tail
         # on STOPPING and confirm it after the configured silence window.
         # Any resumed speech withdraws the candidate.
-        stream = self._capture is not None and self._capture.input_transport in {"ndjson-v1", "websocket-v1"}
+        stream = self._capture is not None and self._capture.input_transport in {"websocket-v25"}
         # Once initialized, the detector must see the continuous PCM timeline,
         # including gaps and a later reservation's readiness wait. Otherwise a
         # short resumed word may never take it through SPEAKING -> STOPPING.
@@ -1021,7 +1007,7 @@ class GiggyV21PipecatSTTService(GiggySTTService):
             if self._v21_speaking and turn is not None:
                 if frame.stop_secs > 0:
                     turn.speech_end_time = frame.timestamp - frame.stop_secs
-                native_provider = self._native_vad is not None and turn.input_transport in {"ndjson-v1", "websocket-v1"}
+                native_provider = self._native_vad is not None and turn.input_transport in {"websocket-v25"}
                 native_holds_turn = native_provider and (
                     self._context_endpoint_secs(turn) > frame.stop_secs
                     or getattr(self._native_vad_state, "name", None) in ("SPEAKING", "STARTING", "STOPPING"))

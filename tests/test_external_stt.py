@@ -1,4 +1,4 @@
-"""External endpoint lifecycle and real HTTP/SSE tests; no provider credentials."""
+"""External endpoint lifecycle and real WebSocket tests; no provider credentials."""
 import asyncio,json,unittest
 from unittest.mock import patch
 from pipecat_giggy import stt as m
@@ -92,7 +92,7 @@ async def vad_check():
 
 
 
-# Finite-input regressions extend the existing aiohttp/SSE fixture above.
+# Finite-input regressions extend the existing aiohttp/WebSocket fixture above.
 import hashlib
 import importlib.util
 import os
@@ -133,7 +133,7 @@ async def wait_for_condition(predicate, timeout=2):
 
 class FiniteHTTPFixture:
     """Existing local admit/audio/status/artifact fixture, with test-only capture."""
-    def __init__(self, pcm, *, disconnect=False, wrong_fence=None, verification_gate=None, final_gate=None, artifact_text=None, artifact_duration=None, transport="websocket-v1", artifact_status=200, artifact_error_body=b"", artifact_headers=None):
+    def __init__(self, pcm, *, disconnect=False, wrong_fence=None, verification_gate=None, final_gate=None, artifact_text=None, artifact_duration=None, transport="websocket-v25", artifact_status=200, artifact_error_body=b"", artifact_headers=None):
         self.pcm, self.disconnect, self.wrong_fence = pcm, disconnect, wrong_fence
         self.artifact_requests = 0
         self.artifact_status, self.artifact_error_body = artifact_status, artifact_error_body
@@ -153,18 +153,31 @@ class FiniteHTTPFixture:
         self.trace.append({'event': event, 'monotonic_ms': time.perf_counter_ns() / 1e6})
 
     async def emit(self, response, event, payload):
-        await response.write(('event: ' + event + '\ndata: ' + json.dumps(payload, ensure_ascii=False) + '\n\n').encode())
+        if event == 'microphone_ready':
+            payload = {'generation_uuid': self.gid, 'attempt': self.attempt,
+                       'sampleRateHz': 16000 if self.transport in {'websocket-v25'} else 8000}
+            event = 'ready'
+        elif event == 'transcript_chunk':
+            payload = {**payload, 'is_final': payload['complete'],
+                       'alternatives': [{'transcript': payload['text']}]}
+            event = 'transcription'
+        await response.send_json({'type': event, **payload})
 
     async def admit(self, req):
-        self.admissions.append(await req.json())
-        assert req.headers['xi-api-key'] == 'unit'
-        response = web.StreamResponse(headers={'Content-Type': 'text/event-stream'})
+        assert req.headers['Authorization'] == 'Bearer unit'
+        response = web.WebSocketResponse()
         await response.prepare(req)
+        start = await response.receive_json()
+        assert start['type'] == 'start' and start['format'] == 'raw'
+        assert start['encoding'] == 'LINEAR16' and start['sampleRateHz'] == 16000
+        assert start['options']['endpointing'] == 'external'
+        self.admissions.append(start)
         await self.emit(response, 'generation_created', {'generation_uuid': self.gid})
         await self.emit(response, 'microphone_ready', {'generation_uuid': self.gid, 'attempt': self.attempt, 'input_token': self.token, **({'input_transport': self.transport} if self.transport else {})})
         self.response = response
         self.mark('readiness_issued')
         final_task, eof_task = asyncio.create_task(self.final.wait()), asyncio.create_task(self.eof.wait())
+        audio_task = asyncio.create_task(self.audio(response))
         try:
             done, _ = await asyncio.wait([final_task, eof_task], return_when=asyncio.FIRST_COMPLETED)
             if eof_task in done:
@@ -189,45 +202,35 @@ class FiniteHTTPFixture:
             await self.emit(response, 'generation_updated', {'generation_uuid': self.gid, 'status': 'completed'})
             return response
         finally:
-            for task in [final_task, eof_task]:
+            for task in [final_task, eof_task, audio_task]:
                 task.cancel()
-            await asyncio.gather(final_task, eof_task, return_exceptions=True)
+            await asyncio.gather(final_task, eof_task, audio_task, return_exceptions=True)
+            await response.close()
             self.disconnect_seen.set()
 
-    async def audio(self, req):
-        if req.method == 'GET':
-            assert req.headers['x-giggy-input-token'] == self.token
-            assert 'xi-api-key' not in req.headers
-            socket = web.WebSocketResponse(protocols=('giggy-stt-v1',))
-            await socket.prepare(req)
-            async for message in socket:
-                body = json.loads(message.data)
-                assert body['sequence'] == len(self.frames) and body['input_token'] == self.token
-                self.frames.append(body)
-                if body['complete']:
-                    await socket.send_json({'ok': True, 'sequence': body['sequence'] + (1 if self.wrong_fence == 'ack' else 0)})
-                    self.final.set()
-                    await socket.close()
-                    break
-                elif len(self.frames) == 1:
+    async def audio(self, socket):
+        async for message in socket:
+            if message.type == m.aiohttp.WSMsgType.BINARY:
+                self.frames.append({'sequence': len(self.frames), 'complete': False,
+                                    'pcm_base64': base64.b64encode(message.data).decode()})
+                if len(self.frames) == 1:
                     await self.emit_interim()
                     if self.disconnect:
                         self.eof.set()
-            return socket
-        assert self.transport != 'websocket-v1', 'V21 advertised socket must be used'
-        body = await req.json()
-        assert req.match_info['id'] == self.gid
-        assert body['sequence'] == len(self.frames) and body['input_token'] == self.token
-        assert not self.frames or self.frames[-1]['complete'] is False
-        self.frames.append(body)
-        self.mark('final_marker_received_HTTP' if body['complete'] else 'PCM_received_HTTP')
-        if body['complete']:
-            self.final.set()
-        elif len(self.frames) == 1:
-            await self.emit_interim()
-            if self.disconnect:
-                self.eof.set()
-        return web.json_response({'ok': True})
+            else:
+                control = json.loads(message.data)
+                if control.get('type') == 'prepare':
+                    samples = sum(len(base64.b64decode(frame['pcm_base64'])) // 2 for frame in self.frames)
+                    assert control['decode_end_sample'] is None or type(control['decode_end_sample']) is int and max(0, samples - 3200) <= control['decode_end_sample'] <= samples
+                    self.mark('canonical_preparation')
+                    continue
+                assert control == {'type': 'stop'}
+                sequence = len(self.frames)
+                self.frames.append({'sequence': sequence, 'complete': True, 'pcm_base64': ''})
+                await socket.send_json({'type': 'input_complete', 'generation_uuid': self.gid,
+                                        'sequence': sequence + (1 if self.wrong_fence == 'ack' else 0)})
+                self.final.set()
+                break
 
     async def emit_interim(self):
         await self.emit(self.response, 'transcript_chunk', {'generation_uuid': self.gid, 'attempt': self.attempt, 'sequence': 0, 'replace': True, 'complete': False, 'text': 'interim only'})
@@ -255,9 +258,7 @@ class FiniteHTTPFixture:
 
     async def __aenter__(self):
         app = web.Application()
-        app.router.add_post('/v1/audio/transcriptions', self.admit)
-        app.router.add_post('/api/generations/{id}/stt-input', self.audio)
-        app.router.add_get('/api/generations/{id}/stt-input', self.audio)
+        app.router.add_get('/v1/audio/transcriptions', self.admit)
         app.router.add_get('/v1/generations/{id}', self.status)
         app.router.add_get('/artifact', self.artifact)
         self.runner = web.AppRunner(app)
@@ -286,7 +287,7 @@ class FiniteHTTPFixture:
         await self.runner.cleanup()
 
 
-async def finite_http_check(module=m, *, ending='external', seconds=1.3, negative=None, transport="websocket-v1"):
+async def finite_http_check(module=m, *, ending='external', seconds=1.3, negative=None, transport="websocket-v25"):
     # Patterned, aligned PCM is local transport test data, not a changed corpus.
     pcm = bytes(range(256)) * (int(seconds * 32000) // 256)
     pcm += b'\x12\x34' * ((int(seconds * 32000) - len(pcm)) // 2)
@@ -404,7 +405,7 @@ class FiniteStreamFinalizationTests(unittest.IsolatedAsyncioTestCase):
         for ending in ['vad', 'EndFrame']:
             for seconds in [1.3, 1.0]:
                 with self.subTest(ending=ending, seconds=seconds):
-                    await finite_http_check(ending=ending, seconds=seconds, transport='websocket-v1')
+                    await finite_http_check(ending=ending, seconds=seconds, transport='websocket-v25')
 
     async def test_finite_audio_without_endpoint_has_no_final(self):
         for module, ending in [(m, 'external'), (m, 'vad'), (benchmark_adapter(), 'vad')]:
@@ -599,7 +600,7 @@ class BenchmarkFastFinalTests(unittest.IsolatedAsyncioTestCase):
                         selected.set(chosen)
                     else:
                         chosen = selected.get()
-                    request = chosen.session.ws_connect if "protocols" in kw else chosen.session.post
+                    request = chosen.session.ws_connect
                     return request(url.replace(one.origin, chosen.origin), **kw)
                 ws_connect = post  # Reuse the existing context-scoped request proxy.
                 def get(self, url, **kw):
@@ -652,6 +653,21 @@ class ExternalEndpointingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_ready_pcm_finalize_and_next_turn(self):
         await check()
+        controls = []
+        class Socket:
+            closed = False
+            async def send_bytes(self, pcm):
+                controls.append(('pcm', pcm))
+            async def send_json(self, body):
+                controls.append(('control', body))
+        turn = m._Utterance('preparation', audio=bytearray(b'\x01\x00' * 8000),
+                            captured=16000, ended=True, decode_end_sample=7900)
+        turn.input_acknowledged.set()
+        svc = m.GiggySTTService(api_key='unit', aiohttp_session=object(), endpointing='external')
+        await svc._send_audio(turn, str(uuid4()), Socket())
+        assert controls[1] == ('control', {'type': 'prepare', 'decode_end_sample': 7900})
+        assert controls[-1] == ('control', {'type': 'stop'})
+        assert controls[0][1] == b'\x01\x00' * 8000 and turn.sent_frames == 1
     async def test_timeout_and_idle_cleanup(self):
         await lifecycle()
     async def test_real_http_order_utf8_and_artifact(self):
