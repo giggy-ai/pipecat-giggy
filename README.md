@@ -253,7 +253,7 @@ events are validated before final publication. During candidate silence, the
 source adapter relays the existing canonical `decode_end_sample` in a `prepare`
 control, so decoding can overlap endpoint confirmation. Resumed speech clears
 that hint with `null`. All real PCM is still sent, and only `stop` ends input.
-This unreleased source change requires the matching Giggy WebSocket preparation
+This unreleased source change requires the production Giggy WebSocket preparation
 handler; it is not available in the published package. There is no transport
 fallback or automatic input replay.
 Microphone hardware and echo cancellation remain application-owned concerns.
@@ -399,14 +399,14 @@ cancel an existing utterance. Readiness and final-result timeouts can be supplie
 as `ready_timeout` and `final_timeout`.
 
 A source that merely pauses has not reached EOF. A broken network connection or
-closing the WebSocket is also not an audio-source EOF. Raw HTTP
-clients still need to send a final WebSocket audio frame with `complete:true`; an
+closing the WebSocket is also not an audio-source EOF. Raw WebSocket
+clients must flush their real binary PCM tail, then send `{"type":"stop"}`; an
 ordinary frame or a disconnected socket does not mean the source ended successfully. Existing Pipecat `EndFrame`
 already flushes the current capture; `CancelFrame` continues to abort it.
 
 The return value uses the existing fenced fast-final path. Durable verification
 continues in the background; drain the normal service lifecycle for durable
-completion and handle later verification errors. This source change is local
+completion and handle later verification errors. This is a source-checkout change
 and has not been published to the package registry.
 
 
