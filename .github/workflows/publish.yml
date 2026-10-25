@@ -6,7 +6,6 @@ on:
       tag:
         description: Published GitHub release tag containing validated distributions
         required: true
-        default: v0.1.0
         type: string
 
 permissions:

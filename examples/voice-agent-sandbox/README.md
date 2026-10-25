@@ -27,7 +27,7 @@ Only successful durable STT completion produces a final Pipecat transcription. N
 
 Keys are validated against production APIs and held only in bounded server memory for 30 minutes. The browser receives an opaque HttpOnly SameSite cookie. Disconnect deletes the account session and clears keys. Production hosting requires HTTPS. Use a trusted single-instance host: this example has in-memory sessions and is not a shared multi-worker session store.
 
-The sandbox uses the existing Giggy production service. It does not change Giggy workers, database schemas, credits, or deployment. The underlying published adapter is now `0.2.0`, including STT/TTS; install sandbox extras from this source checkout. No PyPI or upstream Pipecat release is made by this change. Physical microphone and deployed browser qualification remain release checks.
+The sandbox uses the existing Giggy production service. It does not change Giggy workers, database schemas, credits, or deployment. The underlying published adapter is now `0.3.1`, including WebSocket STT and TTS; install sandbox extras from this source checkout. No PyPI or upstream Pipecat release is made by this change. Physical microphone and deployed browser qualification remain release checks.
 
 ## Check
 
@@ -38,3 +38,9 @@ python -m pytest tests -q
 ```
 
 Tests run the real native Pipecat pipeline with deterministic provider stand-ins, covering automatic introduction, streamed audio, typed and microphone turns, credential isolation, origin restrictions, and disconnect. Provider production checks must use private environment credentials outside the repository.
+
+## Current STT transport
+
+The browser supplies turn boundaries. The server therefore uses `GiggyExternalSTTService(endpointing="external")` from the current adapter rather than adding a second provider VAD. Audio uses the authenticated `wss://api.giggy.ai/v1/audio/transcriptions` socket with start/readiness, binary 16 kHz PCM and stop controls; no per-frame HTTPS requests or automatic replay. The adapter validates final input and fenced transcript identity, then verifies the saved result. Consumers must drain the lifecycle and surface later verification errors.
+
+Install sandbox extras from this PR source, not the published wheel, because the sandbox itself remains unreleased. Offline provider stand-ins do not qualify browser microphone capture, hosted deployment, echo cancellation or production latency; this PR remains draft until those checks are complete.

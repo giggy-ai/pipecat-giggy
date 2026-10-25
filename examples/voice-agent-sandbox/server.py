@@ -38,7 +38,7 @@ from pipecat.turns.user_start import ExternalUserTurnStartStrategy
 from pipecat.turns.user_stop import ExternalUserTurnStopStrategy
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
-from pipecat_giggy import GiggyHttpTTSService, GiggySTTService
+from pipecat_giggy import GiggyHttpTTSService, GiggyExternalSTTService
 from sandbox_config import VOICES, GREETINGS
 
 # Provider/library debug logs can contain prompts or upstream error bodies.
@@ -215,7 +215,7 @@ async def run_conversation(websocket, account, *, services=None):
     state = Conversation(websocket, account)
     async with aiohttp.ClientSession() as session:
         stt, llm, tts = services or (
-            GiggySTTService(api_key=account.giggy_key, aiohttp_session=session),
+            GiggyExternalSTTService(api_key=account.giggy_key, aiohttp_session=session, endpointing="external"),
             # Pipecat 1.12.0 needs provider options passed through its active base request builder.
             DeepSeekLLMService(api_key=account.deepseek_key, settings=DeepSeekLLMService.Settings(model="deepseek-flash", max_tokens=160,
                 extra={"extra_body": {"thinking": {"type": "disabled"}}})),
