@@ -627,6 +627,33 @@ class BenchmarkFastFinalTests(unittest.IsolatedAsyncioTestCase):
                     first_final.set()
                     first_durable.set()
 
+        # A following reservation can still be awaiting signed readiness when
+        # upstream VAD stops. Its continuous provider detector remains authoritative.
+        from unittest.mock import AsyncMock
+        from pipecat.audio.vad.vad_analyzer import VADState
+        adapter = benchmark_adapter()
+        for transport in (None, 'websocket-v25'):
+            for state in (VADState.STARTING, VADState.SPEAKING, VADState.STOPPING, VADState.QUIET):
+                with self.subTest(transport=transport, provider_state=state):
+                    svc = adapter.GiggyV21PipecatSTTService(api_key='unit', aiohttp_session=object())
+                    turn = adapter._Utterance('pending-next', captured=32000, input_transport=transport)
+                    svc._capture = turn
+                    svc._v21_speaking = True
+                    svc._native_vad = object()
+                    svc._native_vad_state = state
+                    boundary = VADUserStoppedSpeakingFrame(timestamp=time.time(), stop_secs=.2)
+                    with patch.object(adapter.GiggySTTService, 'process_frame', new=AsyncMock()):
+                        await svc.process_frame(boundary, FrameDirection.DOWNSTREAM)
+                    self.assertEqual(turn.speech_end_time, boundary.timestamp - .2)
+                    if state == VADState.QUIET:
+                        self.assertTrue(turn.ended)
+                        self.assertIsNone(svc._capture)
+                    else:
+                        self.assertFalse(turn.ended)
+                        self.assertIs(svc._capture, turn)
+                        self.assertTrue(svc._v21_speaking)
+                    await svc._abort()
+
 
 class ExternalEndpointingTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -658,8 +685,18 @@ class ExternalEndpointingTests(unittest.IsolatedAsyncioTestCase):
             closed = False
             async def send_bytes(self, pcm):
                 controls.append(('pcm', pcm))
+                samples = sum(len(value) // 2 for kind, value in controls if kind == 'pcm')
+                hints = [value['decode_end_sample'] for kind, value in controls
+                         if kind == 'control' and value['type'] == 'prepare']
+                assert not hints or hints[-1] is None or samples - 3200 <= hints[-1] <= samples
             async def send_json(self, body):
                 controls.append(('control', body))
+                if body['type'] == 'prepare' and body['decode_end_sample'] is not None and getattr(self, 'extra_pcm', None):
+                    self.turn.audio.extend(self.extra_pcm)
+                    self.turn.captured += len(self.extra_pcm)
+                    self.extra_pcm = None
+                    self.turn.ended = True
+                    self.turn.changed.set()
         turn = m._Utterance('preparation', audio=bytearray(b'\x01\x00' * 8000),
                             captured=16000, ended=True, decode_end_sample=7900)
         turn.input_acknowledged.set()
@@ -668,6 +705,28 @@ class ExternalEndpointingTests(unittest.IsolatedAsyncioTestCase):
         assert controls[1] == ('control', {'type': 'prepare', 'decode_end_sample': 7900})
         assert controls[-1] == ('control', {'type': 'stop'})
         assert controls[0][1] == b'\x01\x00' * 8000 and turn.sent_frames == 1
+
+        # Delayed readiness can coalesce real PCM beyond a previously prepared
+        # 200ms tail. Withdraw the hint before that PCM; retain every sample.
+        controls.clear()
+        first, tail = b'\x01\x00' * 3200, b'\x02\x00' * 8000
+        turn = m._Utterance('delayed-ready', audio=bytearray(first), captured=len(first),
+                            decode_end_sample=2560)
+        turn.input_acknowledged.set()
+        socket = Socket()
+        socket.turn, socket.extra_pcm = turn, tail
+        await svc._send_audio(turn, str(uuid4()), socket)
+        assert b''.join(value for kind, value in controls if kind == 'pcm') == first + tail
+        assert controls[-3][1] == {'type': 'prepare', 'decode_end_sample': None}
+        assert controls[-1] == ('control', {'type': 'stop'})
+
+        controls.clear()
+        turn = m._Utterance('already-stale', audio=bytearray(first + tail),
+                            captured=len(first + tail), ended=True, decode_end_sample=2560)
+        turn.input_acknowledged.set()
+        await svc._send_audio(turn, str(uuid4()), Socket())
+        assert b''.join(value for kind, value in controls if kind == 'pcm') == first + tail
+        assert all(kind != 'control' or value['type'] != 'prepare' for kind, value in controls)
     async def test_timeout_and_idle_cleanup(self):
         await lifecycle()
     async def test_real_http_order_utf8_and_artifact(self):

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 — 2026-10-24
+
+- Keep the continuous speech detector authoritative while a following STT reservation awaits readiness, so upstream VAD cannot split speech during that wait.
+- Withdraw expired tail-preparation hints before forwarding coalesced real PCM. Preserve every sample, final input acknowledgement, ordered publication and saved-result verification.
+
 ## 0.3.0 — 2026-10-23
 
 - Use the canonical V25 one-socket WebSocket bridge for the public `GiggySTTService`: readiness before capture, 20 ms first / 100 ms ongoing PCM, independent 100 ms Silero endpoints and softer continuation detection.

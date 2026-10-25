@@ -2,7 +2,7 @@
 
 [Developer tool guide](https://giggy.ai/docs/speech-api#api-developer-tools) · [Python SDK](https://github.com/giggy-ai/giggy-python) · [JavaScript/TypeScript SDK](https://github.com/giggy-ai/giggy-js) · [Runnable examples](https://github.com/giggy-ai/giggy-examples) · [Pricing](https://giggy.ai/pricing)
 
-Giggy-maintained text-to-speech and live speech-to-text integration for Pipecat voice agents. Version `0.3.0` uses the current one-socket WebSocket STT transport; `0.2.0` retains its earlier transport. Start with [TTS pipeline usage](#pipeline-usage), [live STT](#speech-to-text), or the [live-protocol recording replay](#replay-a-recording-through-the-live-input-protocol). STT sessions accept PCM16 mono 16 kHz audio for 0.5–30 seconds per utterance. Live Pipecat use includes a provider endpoint detector and requires upstream VAD for Pipecat turn timing; explicit-boundary recordings use `GiggyExternalSTTService`.
+Giggy-maintained text-to-speech and live speech-to-text integration for Pipecat voice agents. Version `0.3.1` fixes readiness transitions and expired preparation hints during buffered input, and uses the current one-socket WebSocket STT transport; `0.2.0` retains its earlier transport. Start with [TTS pipeline usage](#pipeline-usage), [live STT](#speech-to-text), or the [live-protocol recording replay](#replay-a-recording-through-the-live-input-protocol). STT sessions accept PCM16 mono 16 kHz audio for 0.5–30 seconds per utterance. Live Pipecat use includes a provider endpoint detector and requires upstream VAD for Pipecat turn timing; explicit-boundary recordings use `GiggyExternalSTTService`.
 
 Version `0.2.0` adds live speech-to-text alongside the existing text-to-speech
 integration. Both use Giggy's paid Streaming API and Pipecat 1.12.0.
@@ -86,7 +86,7 @@ on development experiment flags. Language defaults to automatic detection; set
 Local compatibility verification covers canonical STT regressions, the actual
 V25 WebSocket protocol fixtures, and TTS progressive PCM, error handling, runtime
 voice/speed updates and response cancellation. This does not qualify microphone
-hardware or every newer Pipecat release. Install version 0.3.0 for these features; installing version 0.2.0 does not
+hardware or every newer Pipecat release. Install version 0.3.1 for these features; installing version 0.2.0 does not
 install these source changes.
 
 ## Prerequisites
@@ -405,7 +405,7 @@ already flushes the current capture; `CancelFrame` continues to abort it.
 
 The return value uses the existing fenced fast-final path. Durable verification
 continues in the background; drain the normal service lifecycle for durable
-completion and handle later verification errors. Version 0.3.0 provides this behavior; older releases retain their earlier transport.
+completion and handle later verification errors. Version 0.3.1 provides this behavior; older releases retain their earlier transport.
 
 
 ## Develop and verify this checkout
