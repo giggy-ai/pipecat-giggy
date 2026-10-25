@@ -4,20 +4,9 @@
 
 Giggy-maintained text-to-speech and live speech-to-text integration for Pipecat voice agents. Version `0.3.1` fixes readiness transitions and expired preparation hints during buffered input, and uses the current one-socket WebSocket STT transport; `0.2.0` retains its earlier transport. Start with [TTS pipeline usage](#pipeline-usage), [live STT](#speech-to-text), or the [live-protocol recording replay](#replay-a-recording-through-the-live-input-protocol). STT sessions accept PCM16 mono 16 kHz audio for 0.5–30 seconds per utterance. Live Pipecat use includes a provider endpoint detector and requires upstream VAD for Pipecat turn timing; explicit-boundary recordings use `GiggyExternalSTTService`.
 
-Version `0.2.0` adds live speech-to-text alongside the existing text-to-speech
-integration. Both use Giggy's paid Streaming API and Pipecat 1.12.0.
+Version `0.3.1` includes live speech-to-text and text-to-speech. Both use Giggy's paid Streaming API and Pipecat 1.12.0.
 
-Giggy makes expressive Voice AI accessible to more developers, with natural
-speech, expressive control, and voice cloning. Our focus is making high-quality
-speech affordable enough for developers to build and scale voice experiences.
-
-This integration brings Giggy's paid streaming speech API into Pipecat pipelines,
-with voice selection, speech-speed updates, and interruption handling. Developers
-can give their assistants a distinctive voice while keeping their existing
-transcription, language model, and transport providers.
-
-Voice cloning and expressive control are Giggy product capabilities. This adapter
-uses existing voice UUIDs; its runtime settings expose voice selection and speed.
+This Giggy-maintained package provides streaming STT and TTS processors for Pipecat pipelines. TTS uses existing voice UUIDs and runtime voice/speed settings; STT consumes VAD-delimited 16 kHz mono PCM and returns interim snapshots and an ownership-fenced final transcript, then verifies durable completion. Consumers must drain the lifecycle and handle later verification errors. These adapters do not implement voice cloning or local model inference.
 
 Maintained by Giggy, the speech API provider. Community-maintained integrations
 are maintained by their authors; this package is not maintained by the Pipecat team.
@@ -43,22 +32,22 @@ your API key. We'd love to hear what you're building and help with integration.
 Install the Giggy-maintained integration:
 
 ```sh
-uv add pipecat-giggy
+uv add pipecat-giggy==0.3.1
 ```
 
-Or use `python -m pip install pipecat-giggy`.
+Or use `python -m pip install pipecat-giggy==0.3.1`.
 
-For the unpublished V25 behavior shown in this checkout, install the local source
-inside an activated virtual environment instead:
+For adapter development or the repository tests, install this source checkout
+inside an activated virtual environment:
 
 ```sh
 python -m pip install -e ".[test]"
 ```
 
-Published `0.2.0` behavior is documented in its
+The WebSocket transport, decode preparation and readiness fixes described below
+are available in published `0.3.1`. Older `0.2.0` behavior remains documented in its
 [tagged README](https://github.com/giggy-ai/pipecat-giggy/blob/v0.2.0/README.md).
-The live and recording examples below describe this checkout; use its editable
-installation when running those files.
+Run repository examples from their matching source revision.
 
 Requires Python 3.11 or later. This checkout is tested with Python 3.11.9 and Pipecat 1.12.0;
 the dependency is pinned to that Pipecat release until later releases are tested.
@@ -154,6 +143,7 @@ same pattern for the voice and billable-example flag. No key is printed.
 | `aiohttp_session` | Required | Caller-owned `aiohttp.ClientSession` |
 | `sample_rate` | `24000` | Current Streaming contract supports 24 kHz only |
 | `speed` | `1.0` | Speech speed, 0.25–4 inclusive |
+
 | Additional keyword arguments | Pipecat defaults | Options passed to `TTSService` |
 
 Runtime settings use Pipecat's `TTSUpdateSettingsFrame`:
@@ -199,19 +189,19 @@ still supplies upstream VAD and keeps its measurement timing unchanged. For fini
 Cancellation still aborts. `GiggyExternalSTTService` supports caller-owned endpoints
 and clean audio-source EOF without the live provider detector.
 It sends audio while the user speaks, emits cumulative provisional text through
-`InterimTranscriptionFrame`. This development checkout emits one finalized
+`InterimTranscriptionFrame`. Version `0.3.1` emits one finalized
 `TranscriptionFrame` when the ownership-fenced stream marks its snapshot complete.
 It then drains completion and verifies the saved transcript matches that final;
 storage or verification failures remain visible even after text delivery.
-The published 0.2.0 package still waits for completed-operation verification and
-canonical transcript retrieval; this latency change has not been published.
+The older `0.2.0` package waits for completed-operation verification and canonical
+transcript retrieval before final delivery; `0.3.1` provides the behavior above.
 Display each interim snapshot by replacement; do not append revisions or treat
 them as committed user text. No STT voice UUID is required.
 
-These V25 integration changes are local and not yet published. Install `pipecat-giggy>=0.2.0` for released STT; version 0.1.0 contains TTS only.
+Install `pipecat-giggy==0.3.1` for the current WebSocket STT transport and readiness fixes. Version `0.2.0` retains its earlier transport; `0.1.0` contains TTS only.
 
 ```sh
-python -m pip install "pipecat-giggy>=0.2.0"
+python -m pip install "pipecat-giggy==0.3.1"
 ```
 
 [Watch the two-voice STT conversation demo](https://github.com/giggy-ai/pipecat-giggy/releases/download/v0.2.0/giggy-pipecat-stt-live-chat.mp4).
@@ -252,8 +242,8 @@ events are validated before final publication. During candidate silence, the
 source adapter relays the existing canonical `decode_end_sample` in a `prepare`
 control, so decoding can overlap endpoint confirmation. Resumed speech clears
 that hint with `null`. All real PCM is still sent, and only `stop` ends input.
-This release requires the production Giggy WebSocket preparation
-handler; it is not available in the published package. There is no transport
+Published `0.3.1` uses the production Giggy WebSocket preparation
+handler. There is no transport
 fallback or automatic input replay.
 Microphone hardware and echo cancellation remain application-owned concerns.
 
@@ -267,8 +257,8 @@ known-English audio; omitted or `None` selects automatic detection. Language
 settings are snapshotted per reservation, so updates apply to a new reservation,
 not an in-flight utterance. Synthetic keepalive audio is unsupported.
 
-One earlier utterance may finalize while the next is captured. In this development
-checkout, up to eight network operations progress concurrently; final transcripts
+One earlier utterance may finalize while the next is captured. In `0.3.1`,
+up to eight network operations progress concurrently; final transcripts
 retain utterance order without waiting for earlier artifact storage. Pending
 capture is capped at 32 utterances and 30 seconds of aggregate real PCM. The
 published 0.2.0 package retains its two-utterance limit. Queue overflow, an
@@ -425,3 +415,9 @@ lifecycle, interruption, protocol and metrics checks. The project remains
 `pipecat-giggy` on GitHub/PyPI and `pipecat_giggy` in Python, following Pipecat's
 community naming recommendation. No alias package or automatic provider fallback
 is installed.
+
+## Existing browser demos
+
+For an application you can run today, use the [standalone cloud sandbox](https://github.com/giggy-ai/giggy-voice-agent), with its own Giggy/DeepSeek keys and server bridge. For native Pipecat, review [cloud sandbox PR #2](https://github.com/giggy-ai/pipecat-giggy/pull/2) and [SmallWebRTC PR #1](https://github.com/giggy-ai/pipecat-giggy/pull/1). They remain separate unmerged proposals with qualification notes; no additional demo is needed. The standalone sandbox explicitly uses the supported legacy HTTPS/SSE bridge; it does not demonstrate native WebSocket latency. The existing recorded-input STT/TTS video is not physical microphone qualification.
+
+[Create a Giggy account](https://giggy.ai/?login=1&utm_source=github&utm_medium=referral&utm_campaign=developer_onboarding&utm_content=pipecat_giggy_readme) and [read the speech API guide](https://giggy.ai/docs/speech-api?utm_source=github&utm_medium=referral&utm_campaign=developer_onboarding&utm_content=pipecat_giggy_docs). Keep keys server-side. Install published `pipecat-giggy==0.3.1`; selecting a voice, sufficient account credits and the pinned Pipecat version remain prerequisites for a real API run.
