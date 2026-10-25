@@ -468,6 +468,11 @@ class GiggySTTService(STTService):
             if socket.closed:
                 raise ValueError("Live STT socket closed before input completion")
             candidate = turn.decode_end_sample
+            # Readiness/backpressure can coalesce real PCM past a prepared
+            # tail's 200ms window. Withdraw it before forwarding that PCM;
+            # retain the full input and the normal final/ACK fences.
+            if candidate is not None and candidate < max(0, sent_samples + len(pcm) // 2 - 3200):
+                candidate = None
             # Withdraw before resumed PCM; a new boundary can only refer to
             # samples already accepted on this ordered socket.
             if candidate != prepared and (prepared is not None or candidate is not None and candidate <= sent_samples):
@@ -1007,7 +1012,10 @@ class GiggyV21PipecatSTTService(GiggySTTService):
             if self._v21_speaking and turn is not None:
                 if frame.stop_secs > 0:
                     turn.speech_end_time = frame.timestamp - frame.stop_secs
-                native_provider = self._native_vad is not None and turn.input_transport in {"websocket-v25"}
+                # The detector stays continuous across reservations. A following
+                # turn can still be awaiting readiness when upstream VAD stops;
+                # that wait must not end speech the provider still detects.
+                native_provider = self._native_vad is not None
                 native_holds_turn = native_provider and (
                     self._context_endpoint_secs(turn) > frame.stop_secs
                     or getattr(self._native_vad_state, "name", None) in ("SPEAKING", "STARTING", "STOPPING"))
