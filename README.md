@@ -257,7 +257,6 @@ known-English audio; omitted or `None` selects automatic detection. Language
 settings are snapshotted per reservation, so updates apply to a new reservation,
 not an in-flight utterance. Synthetic keepalive audio is unsupported.
 
-
 One earlier utterance may finalize while the next is captured. In `0.3.1`,
 up to eight network operations progress concurrently; final transcripts
 retain utterance order without waiting for earlier artifact storage. Pending
@@ -298,7 +297,7 @@ python examples/transcribe.py --input your-recording.wav
 ```
 
 For PowerShell use `$env:GIGGY_API_KEY = "your-api-key"` and
-`$env:GIGGY_ALLOW_BILLABLE_EXAMPLE = "1"`. The recording must be 0.5â€“30 seconds.
+`$env:GIGGY_ALLOW_BILLABLE_EXAMPLE = "1"`. The recording must be 0.5–30 seconds.
 Output labels provisional replacement snapshots and the canonical final text.
 
 ## Maintenance
