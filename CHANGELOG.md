@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 — 2026-10-24
 
 - Keep the continuous speech detector authoritative while a following STT reservation awaits readiness, so upstream VAD cannot split speech during that wait.
 - Withdraw expired tail-preparation hints before forwarding coalesced real PCM. Preserve every sample, final input acknowledgement, ordered publication and saved-result verification.
